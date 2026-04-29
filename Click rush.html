@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Click Rush</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root {
+            --bg: #121212;
+            --primary: #00ff88;
+            --secondary: #ff0077;
+            --text: #ffffff;
+            --panel: #1e1e1e;
+        }
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        body { margin: 0; background-color: var(--bg); color: var(--text); overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        
+        /* Utilidades de Pantallas */
+        .screen { display: none; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 20px; width: 100%; height: 100%; position: absolute; top:0; left:0; background: var(--bg); }
+        .screen.active { display: flex; }
+        
+        h1 { color: var(--primary); text-shadow: 0 0 10px rgba(0,255,136,0.5); font-size: 3rem; margin-bottom: 10px; text-align: center; }
+        h2, h3 { color: var(--text); margin: 5px 0; }
+        
+        button { background: var(--primary); color: #000; border: none; padding: 15px 30px; font-size: 1.2rem; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s; margin: 10px; box-shadow: 0 4px 15px rgba(0,255,136,0.3); }
+        button:hover { transform: scale(1.05); }
+        button.danger { background: var(--secondary); color: white; box-shadow: 0 4px 15px rgba(255,0,119,0.3); }
+        
+        input { padding: 12px; font-size: 1.2rem; border-radius: 8px; border: 2px solid var(--primary); background: #000; color: #fff; text-align: center; margin: 10px; }
+        
+        /* Top Bar Info */
+        #topBar { position: absolute; top: 0; left: 0; width: 100%; padding: 15px; background: rgba(0,0,0,0.8); display: flex; justify-content: space-between; z-index: 100; border-bottom: 2px solid var(--primary); }
+        .stats { display: flex; gap: 20px; font-size: 1.2rem; font-weight: bold; }
+        
+        /* Area de Juego */
+        .click-area { width: 250px; height: 250px; background: radial-gradient(circle, var(--primary) 0%, #008844 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; cursor: pointer; box-shadow: 0 0 50px rgba(0,255,136,0.5); transition: transform 0.05s; margin: 30px 0; color: black; border: 5px solid white;}
+        .click-area:active { transform: scale(0.95); }
+        
+        /* Layout de partidas MP */
+        #mpLayout { display: flex; width: 100%; height: 100%; margin-top: 60px; }
+        #leaderboard { flex: 1; background: var(--panel); padding: 20px; overflow-y: auto; border-right: 2px solid #333; }
+        #playArea { flex: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        #chatArea { flex: 1; background: var(--panel); padding: 10px; display: flex; flex-direction: column; border-left: 2px solid #333; }
+        #chatMessages { flex: 1; overflow-y: auto; font-size: 0.9rem; margin-bottom: 10px; display: flex; flex-direction: column; gap: 5px; }
+        .chat-msg { background: #333; padding: 8px; border-radius: 5px; }
+        .chat-msg span { color: var(--primary); font-weight: bold; }
+        
+        /* Layout Lobby */
+        #qr-container { background: white; padding: 15px; border-radius: 10px; margin: 20px 0; }
+        .player-list { background: var(--panel); padding: 20px; border-radius: 10px; width: 300px; max-height: 200px; overflow-y: auto; }
+        
+        /* Paneles */
+        .panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 800px; margin-top: 60px;}
+        .card { background: var(--panel); padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+
+    <div id="topBar">
+        <div class="stats" id="profileInfo" style="cursor: pointer;" onclick="showScreen('screenProfile')">
+            👤 <span id="playerNameDisplay">Ethan</span> (<span id="playerAvatarDisplay">🐶</span>)
+        </div>
+        <div class="stats">
+            🪙 Monedas: <span id="coinsDisplay">0</span> | 
+            🏆 Trofeos: <span id="trophiesDisplay">0</span>
+        </div>
+        <button onclick="showScreen('screenMenu')" style="margin:0; padding: 5px 15px; font-size: 1rem;">Volver al Menú</button>
+    </div>
+
+    <div id="screenMenu" class="screen active">
+        <h1>⚡ CLICK RUSH ⚡</h1>
+        <button onclick="setupHost()">🏆 Crear Partida MP (Host)</button>
+        <button onclick="showScreen('screenJoin')">🎮 Unirse a Partida MP</button>
+        <button onclick="startOfflineMode()">📶 Modo Clásico (Offline)</button>
+        <div style="display:flex; gap:10px; margin-top:20px;">
+            <button class="danger" onclick="showScreen('screenShop')">🛒 Mejoras</button>
+            <button class="danger" onclick="showScreen('screenPasses')">🎟️ Pases y Ligas</button>
+        </div>
+    </div>
+
+    <div id="screenProfile" class="screen">
+        <h2>Personalizar Perfil</h2>
+        <input type="text" id="nameInput" placeholder="Tu Nombre">
+        <input type="text" id="avatarInput" placeholder="Emoji Avatar (ej. 🐶, 👾, 🧙‍♂️)">
+        <button onclick="saveProfile()">Guardar Cambios</button>
+    </div>
+
+    <div id="screenShop" class="screen">
+        <h2>Tienda de Mejoras</h2>
+        <div class="card">
+            <h3>Poder de Click</h3>
+            <p>Suma <span id="currentPower">1</span> pt por click</p>
+            <button onclick="buyUpgrade()">Mejorar (Coste: <span id="upgradeCost">50</span> 🪙)</button>
+        </div>
+    </div>
+
+    <div id="screenPasses" class="screen">
+        <h2>Progreso y Recompensas</h2>
+        <div class="panel-grid">
+            <div class="card">
+                <h3>🎟️ Pase de Batalla</h3>
+                <p>Nivel actual: <span id="bpLevel">1</span></p>
+                <button onclick="claimPassReward()">Reclamar Recompensa (500 pts)</button>
+            </div>
+            <div class="card">
+                <h3>🎖️ Pase de Liga (Mensual)</h3>
+                <p>Liga actual: <strong id="leagueName" style="color:var(--primary)">Bronce</strong></p>
+                <p>Trofeos: <span id="leagueTrophies">0</span>/1000</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="screenJoin" class="screen">
+        <h2>Unirse a Partida</h2>
+        <input type="text" id="joinRoomId" placeholder="Introduce el Room ID">
+        <button onclick="joinRoom()">Conectar</button>
+    </div>
+
+    <div id="screenLobby" class="screen">
+        <h2>Lobby de Espera (<span id="playerCount">1</span>/10)</h2>
+        <h3 id="roomCodeDisplay" style="color:var(--primary); user-select:text;">Cargando ID...</h3>
+        <div id="qr-container"></div>
+        <div class="player-list" id="lobbyPlayers"></div>
+        <button id="btnStartMatch" onclick="hostStartMatch()" style="display:none; margin-top:20px;">Iniciar Partida</button>
+    </div>
+
+    <div id="screenGame" class="screen">
+        <div id="mpLayout">
+            <div id="leaderboard">
+                <h3>Ranking</h3>
+                <div id="rankingList"></div>
+            </div>
+            <div id="playArea">
+                <h2 id="timerDisplay" style="font-size: 3rem; margin:0;">--:--</h2>
+                <h3 id="modeLabel" style="color: var(--secondary);">Modo Offline</h3>
+                <div class="click-area" onclick="handleGameClick()">
+                    <span id="clickValueDisplay">0</span>
+                </div>
+            </div>
+            <div id="chatArea">
+                <h3>Chat (TTS)</h3>
+                <div id="chatMessages"></div>
+                <input type="text" id="chatInput" placeholder="Mensaje..." onkeypress="if(event.key==='Enter') sendChat()">
+            </div>
+        </div>
+    </div>
+
+<script>
+/* =========================================
+   SISTEMA DE AUDIO (Sintetizador Web)
+========================================= */
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioContext();
+
+function playTone(freq, type, duration, vol=0.1) {
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+const sfx = {
+    click: () => playTone(600, 'sine', 0.1, 0.1),
+    buy: () => { playTone(800, 'square', 0.1); setTimeout(()=>playTone(1200, 'square', 0.2), 100); },
+    error: () => playTone(150, 'sawtooth', 0.3),
+    chat: () => playTone(900, 'triangle', 0.1)
+};
+
+/* =========================================
+   ESTADO DEL JUGADOR
+========================================= */
+let player = {
+    id: 'P_' + Math.random().toString(36).substr(2, 9),
+    name: localStorage.getItem('cr_name') || 'Ethan',
+    avatar: localStorage.getItem('cr_avatar') || '🐶',
+    coins: parseInt(localStorage.getItem('cr_coins')) || 0,
+    power: parseInt(localStorage.getItem('cr_power')) || 1,
+    trophies: parseInt(localStorage.getItem('cr_trophies')) || 0,
+    score: 0 // Puntos en partida actual
+};
+
+// Actualizar UI General
+function updateUI() {
+    document.getElementById('playerNameDisplay').innerText = player.name;
+    document.getElementById('playerAvatarDisplay').innerText = player.avatar;
+    document.getElementById('coinsDisplay').innerText = player.coins;
+    document.getElementById('trophiesDisplay').innerText = player.trophies;
+    document.getElementById('currentPower').innerText = player.power;
+    document.getElementById('upgradeCost').innerText = getUpgradeCost();
+    document.getElementById('clickValueDisplay').innerText = player.score;
+    
+    // Ligas lógicas
+    const leagues = ["Bronce", "Plata", "Oro", "Diamante", "Leyenda"];
+    let l_index = Math.min(Math.floor(player.trophies / 200), 4);
+    document.getElementById('leagueName').innerText = leagues[l_index];
+    document.getElementById('leagueTrophies').innerText = player.trophies;
+}
+function getUpgradeCost() { return player.power * 50; }
+
+function saveProfile() {
+    let n = document.getElementById('nameInput').value || 'Ethan';
+    let a = document.getElementById('avatarInput').value || '🐶';
+    player.name = n; player.avatar = a;
+    localStorage.setItem('cr_name', n);
+    localStorage.setItem('cr_avatar', a);
+    updateUI(); showScreen('screenMenu'); sfx.buy();
+}
+
+function buyUpgrade() {
+    let cost = getUpgradeCost();
+    if (player.coins >= cost) {
+        player.coins -= cost;
+        player.power += 1;
+        localStorage.setItem('cr_coins', player.coins);
+        localStorage.setItem('cr_power', player.power);
+        updateUI(); sfx.buy();
+    } else { sfx.error(); }
+}
+
+/* =========================================
+   SISTEMA DE PANTALLAS
+========================================= */
+function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+}
+
+/* =========================================
+   TEXT-TO-SPEECH (TTS)
+========================================= */
+function speakChat(name, text) {
+    if ('speechSynthesis' in window) {
+        let msg = new SpeechSynthesisUtterance(`${name} dice: ${text}`);
+        msg.lang = 'es-ES';
+        msg.rate = 1.2;
+        window.speechSynthesis.speak(msg);
+    }
+}
+
+function displayMessage(name, text) {
+    const chatDiv = document.getElementById('chatMessages');
+    chatDiv.innerHTML += `<div class="chat-msg"><span>${name}:</span> ${text}</div>`;
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+}
+
+/* =========================================
+   LÓGICA MULTIJUGADOR (PeerJS)
+========================================= */
+let peer = null;
+let connections = []; // Solo Host tiene esto lleno
+let hostConnection = null; // Cliente usa esto
+let isHost = false;
+let gameInterval;
+let timeLeft = 120;
+let mpPlayersData = {}; // Diccionario con info de la partida
+
+function initPeer() {
+    if (peer) peer.destroy();
+    peer = new Peer();
+    peer.on('error', err => { console.error(err); alert("Error P2P: " + err.type); sfx.error(); });
+}
+
+// ---- ROL: HOST ----
+function setupHost() {
+    isHost = true;
+    initPeer();
+    showScreen('screenLobby');
+    document.getElementById('roomCodeDisplay').innerText = "Creando sala...";
+    
+    peer.on('open', id => {
+        document.getElementById('roomCodeDisplay').innerText = "ID: " + id;
+        document.getElementById('btnStartMatch').style.display = 'block';
+        
+        // Generar QR
+        document.getElementById('qr-container').innerHTML = '';
+        new QRCode(document.getElementById('qr-container'), { text: id, width: 128, height: 128 });
+        
+        addPlayerToLobby(player.id, player.name, player.avatar);
+    });
+
+    peer.on('connection', conn => {
+        if (connections.length >= 9) { conn.close(); return; } // Max 10 (Host + 9)
+        connections.push(conn);
+        conn.on('data', data => handleHostData(conn, data));
+        conn.on('close', () => { connections = connections.filter(c => c !== conn); syncLobby(); });
+    });
+}
+
+function handleHostData(conn, data) {
+    if (data.type === 'JOIN') {
+        addPlayerToLobby(data.id, data.name, data.avatar);
+        syncLobby();
+    } else if (data.type === 'UPDATE_SCORE') {
+        if(mpPlayersData[data.id]) mpPlayersData[data.id].score = data.score;
+        broadcastState();
+    } else if (data.type === 'CHAT') {
+        broadcastMsg({type: 'CHAT', name: data.name, text: data.text});
+        displayMessage(data.name, data.text);
+        speakChat(data.name, data.text);
+        sfx.chat();
+    }
+}
+
+function addPlayerToLobby(id, name, avatar) {
+    mpPlayersData[id] = { id, name, avatar, score: 0 };
+    updateLobbyUI();
+}
+
+function syncLobby() {
+    broadcastMsg({ type: 'LOBBY_SYNC', players: mpPlayersData });
+    updateLobbyUI();
+}
+
+function updateLobbyUI() {
+    const list = document.getElementById('lobbyPlayers');
+    list.innerHTML = '';
+    let count = 0;
+    for (let id in mpPlayersData) {
+        let p = mpPlayersData[id];
+        list.innerHTML += `<div style="padding:5px;">${p.avatar} ${p.name}</div>`;
+        count++;
+    }
+    document.getElementById('playerCount').innerText = count;
+}
+
+function broadcastMsg(msgObj) {
+    connections.forEach(c => { if(c.open) c.send(msgObj); });
+}
+
+// ---- ROL: CLIENTE ----
+function joinRoom() {
+    let id = document.getElementById('joinRoomId').value;
+    if (!id) return;
+    isHost = false;
+    initPeer();
+    showScreen('screenLobby');
+    document.getElementById('roomCodeDisplay').innerText = "Conectando...";
+    document.getElementById('qr-container').innerHTML = '';
+    document.getElementById('btnStartMatch').style.display = 'none';
+
+    peer.on('open', () => {
+        hostConnection = peer.connect(id);
+        hostConnection.on('open', () => {
+            document.getElementById('roomCodeDisplay').innerText = "Conectado a la sala";
+            hostConnection.send({ type: 'JOIN', id: player.id, name: player.name, avatar: player.avatar });
+        });
+        hostConnection.on('data', data => handleClientData(data));
+        hostConnection.on('close', () => { alert("Host desconectado"); showScreen('screenMenu'); });
+    });
+}
+
+function handleClientData(data) {
+    if (data.type === 'LOBBY_SYNC') {
+        mpPlayersData = data.players;
+        updateLobbyUI();
+    } else if (data.type === 'START') {
+        setupGameEnvironment(true);
+    } else if (data.type === 'GAME_STATE') {
+        mpPlayersData = data.players;
+        timeLeft = data.time;
+        updateGameUI();
+    } else if (data.type === 'CHAT') {
+        displayMessage(data.name, data.text);
+        speakChat(data.name, data.text);
+        sfx.chat();
+    } else if (data.type === 'END') {
+        endMatch(data.winnerId);
+    }
+}
+
+// ---- SISTEMA DE JUEGO ----
+function hostStartMatch() {
+    broadcastMsg({ type: 'START' });
+    setupGameEnvironment(true);
+    timeLeft = 120; // 2 minutos
+    
+    // Bucle de servidor local (Host)
+    gameInterval = setInterval(() => {
+        timeLeft--;
+        broadcastState();
+        if (timeLeft <= 0) {
+            clearInterval(gameInterval);
+            let winner = Object.values(mpPlayersData).sort((a,b)=> b.score - a.score)[0];
+            broadcastMsg({ type: 'END', winnerId: winner.id });
+            endMatch(winner.id);
+        }
+    }, 1000);
+}
+
+function broadcastState() {
+    broadcastMsg({ type: 'GAME_STATE', time: timeLeft, players: mpPlayersData });
+    updateGameUI();
+}
+
+function setupGameEnvironment(isMp) {
+    showScreen('screenGame');
+    player.score = 0;
+    document.getElementById('clickValueDisplay').innerText = "0";
+    document.getElementById('chatMessages').innerHTML = "";
+    document.getElementById('chatArea').style.display = isMp ? 'flex' : 'none';
+    document.getElementById('leaderboard').style.display = isMp ? 'block' : 'none';
+    document.getElementById('modeLabel').innerText = isMp ? "Partida Competitiva" : "Modo Offline - Clásico";
+    
+    if(!isMp) document.getElementById('timerDisplay').innerText = "∞:∞";
+}
+
+function handleGameClick() {
+    player.score += player.power;
+    document.getElementById('clickValueDisplay').innerText = player.score;
+    sfx.click();
+
+    if (!document.getElementById('leaderboard').style.display.includes('none')) {
+        // En Multijugador
+        if (isHost) {
+            mpPlayersData[player.id].score = player.score;
+            updateGameUI();
+        } else if (hostConnection && hostConnection.open) {
+            hostConnection.send({ type: 'UPDATE_SCORE', id: player.id, score: player.score });
+        }
+    } else {
+        // Offline: guardar directamente
+        player.coins += player.power; 
+        localStorage.setItem('cr_coins', player.coins);
+        updateUI();
+    }
+}
+
+function updateGameUI() {
+    // Formatear Tiempo
+    let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+    let s = (timeLeft % 60).toString().padStart(2, '0');
+    document.getElementById('timerDisplay').innerText = `${m}:${s}`;
+    
+    // Actualizar Ranking
+    let arr = Object.values(mpPlayersData).sort((a,b) => b.score - a.score);
+    let html = '';
+    arr.forEach((p, idx) => {
+        let color = p.id === player.id ? 'var(--primary)' : 'white';
+        html += `<div style="padding:8px; border-bottom:1px solid #333; color:${color}">
+            #${idx+1} ${p.avatar} ${p.name}: ${p.score} pts
+        </div>`;
+    });
+    document.getElementById('rankingList').innerHTML = html;
+}
+
+function sendChat() {
+    let inp = document.getElementById('chatInput');
+    let txt = inp.value.trim();
+    if (!txt) return;
+    
+    if (isHost) {
+        broadcastMsg({ type: 'CHAT', name: player.name, text: txt });
+        displayMessage(player.name, txt);
+        speakChat(player.name, txt);
+    } else if (hostConnection) {
+        hostConnection.send({ type: 'CHAT', name: player.name, text: txt });
+    }
+    inp.value = '';
+}
+
+function endMatch(winnerId) {
+    let won = (winnerId === player.id);
+    let msg = won ? "¡HAS GANADO! 🏆" : "Fin de la partida. Gana el jugador rival.";
+    alert(msg);
+    
+    // Recompensas de Liga y Pases
+    player.coins += player.score; // Se convierte puntuacion a monedas
+    if (won) player.trophies += 30;
+    else player.trophies = Math.max(0, player.trophies - 10);
+    
+    localStorage.setItem('cr_coins', player.coins);
+    localStorage.setItem('cr_trophies', player.trophies);
+    updateUI();
+    showScreen('screenMenu');
+    
+    if(peer) { peer.destroy(); peer = null; }
+    connections = [];
+    hostConnection = null;
+}
+
+// ---- MODO OFFLINE ----
+function startOfflineMode() {
+    setupGameEnvironment(false);
+}
+
+// Inicializar UI al cargar
+updateUI();
+document.getElementById('nameInput').value = player.name;
+document.getElementById('avatarInput').value = player.avatar;
+</script>
+</body>
+</html>
